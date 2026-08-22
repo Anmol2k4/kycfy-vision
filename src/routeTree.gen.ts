@@ -10,33 +10,114 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApplicationsRouteImport } from './routes/applications'
+import { Route as AuditLogsRouteImport } from './routes/audit-logs'
+import { Route as DocumentsRouteImport } from './routes/documents'
+import { Route as PortalSubmissionRouteImport } from './routes/portal-submission'
+import { Route as VerificationRouteImport } from './routes/verification'
+import { Route as ApplicationsIdRouteImport } from './routes/applications.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApplicationsRoute = ApplicationsRouteImport.update({
+  id: '/applications',
+  path: '/applications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuditLogsRoute = AuditLogsRouteImport.update({
+  id: '/audit-logs',
+  path: '/audit-logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocumentsRoute = DocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortalSubmissionRoute = PortalSubmissionRouteImport.update({
+  id: '/portal-submission',
+  path: '/portal-submission',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerificationRoute = VerificationRouteImport.update({
+  id: '/verification',
+  path: '/verification',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationsIdRoute = ApplicationsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApplicationsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/applications': typeof ApplicationsRouteWithChildren
+  '/audit-logs': typeof AuditLogsRoute
+  '/documents': typeof DocumentsRoute
+  '/portal-submission': typeof PortalSubmissionRoute
+  '/verification': typeof VerificationRoute
+  '/applications/$id': typeof ApplicationsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/applications': typeof ApplicationsRouteWithChildren
+  '/audit-logs': typeof AuditLogsRoute
+  '/documents': typeof DocumentsRoute
+  '/portal-submission': typeof PortalSubmissionRoute
+  '/verification': typeof VerificationRoute
+  '/applications/$id': typeof ApplicationsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/applications': typeof ApplicationsRouteWithChildren
+  '/audit-logs': typeof AuditLogsRoute
+  '/documents': typeof DocumentsRoute
+  '/portal-submission': typeof PortalSubmissionRoute
+  '/verification': typeof VerificationRoute
+  '/applications/$id': typeof ApplicationsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/applications'
+    | '/audit-logs'
+    | '/documents'
+    | '/portal-submission'
+    | '/verification'
+    | '/applications/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/applications'
+    | '/audit-logs'
+    | '/documents'
+    | '/portal-submission'
+    | '/verification'
+    | '/applications/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/applications'
+    | '/audit-logs'
+    | '/documents'
+    | '/portal-submission'
+    | '/verification'
+    | '/applications/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApplicationsRoute: typeof ApplicationsRouteWithChildren
+  AuditLogsRoute: typeof AuditLogsRoute
+  DocumentsRoute: typeof DocumentsRoute
+  PortalSubmissionRoute: typeof PortalSubmissionRoute
+  VerificationRoute: typeof VerificationRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +129,70 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/applications': {
+      id: '/applications'
+      path: '/applications'
+      fullPath: '/applications'
+      preLoaderRoute: typeof ApplicationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/audit-logs': {
+      id: '/audit-logs'
+      path: '/audit-logs'
+      fullPath: '/audit-logs'
+      preLoaderRoute: typeof AuditLogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/documents': {
+      id: '/documents'
+      path: '/documents'
+      fullPath: '/documents'
+      preLoaderRoute: typeof DocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portal-submission': {
+      id: '/portal-submission'
+      path: '/portal-submission'
+      fullPath: '/portal-submission'
+      preLoaderRoute: typeof PortalSubmissionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verification': {
+      id: '/verification'
+      path: '/verification'
+      fullPath: '/verification'
+      preLoaderRoute: typeof VerificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/applications/$id': {
+      id: '/applications/$id'
+      path: '/$id'
+      fullPath: '/applications/$id'
+      preLoaderRoute: typeof ApplicationsIdRouteImport
+      parentRoute: typeof ApplicationsRoute
+    }
   }
 }
 
+interface ApplicationsRouteChildren {
+  ApplicationsIdRoute: typeof ApplicationsIdRoute
+}
+
+const ApplicationsRouteChildren: ApplicationsRouteChildren = {
+  ApplicationsIdRoute: ApplicationsIdRoute,
+}
+
+const ApplicationsRouteWithChildren = ApplicationsRoute._addFileChildren(
+  ApplicationsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApplicationsRoute: ApplicationsRouteWithChildren,
+  AuditLogsRoute: AuditLogsRoute,
+  DocumentsRoute: DocumentsRoute,
+  PortalSubmissionRoute: PortalSubmissionRoute,
+  VerificationRoute: VerificationRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
