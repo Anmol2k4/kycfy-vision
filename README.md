@@ -9,6 +9,7 @@ Kycfy Vision keeps the existing React/TanStack Start dashboard and adds a FastAP
 - [x] Persist applicants, KYC applications, documents, verification results, risk assessments, submissions, and append-only audit events.
 - [x] Connect the dashboard, applications, documents, verification, portal-submission, and audit-log screens to the API.
 - [x] Add PDF text extraction, explainable field comparisons/risk rules, safe local storage, and a clearly labeled demo portal adapter.
+- [x] Configure local Tesseract OCR for images and scanned PDFs.
 - [ ] Configure a real OCR provider and regulator portal only when suitable credentials/services are available.
 
 ## Requirements
@@ -71,7 +72,7 @@ Open the local URL printed by Vite (typically `http://localhost:8080`). Create a
 
 ## What is and is not integrated
 
-- PDF text extraction is local using `pypdf`. If a PDF has no extractable text, or an image is uploaded, the application marks it for manual review. No OCR is performed on images.
+- PDF text extraction uses `pypdf` first. Scanned PDFs and JPEG/PNG images are processed locally with Tesseract OCR, Poppler, Pillow, and PyTesseract. If OCR produces no usable text, the document remains under manual review.
 - Verification compares fields actually extracted from uploaded PDF text with the submitted applicant fields. Missing values are visible and flagged. Risk levels follow simple documented-in-code rules; they are not an AML/watchlist check or proof of document authenticity.
 - The demo portal adapter stores the structured payload and a `DEMO-…` reference in the database. It never contacts a real portal and does not claim an external acknowledgement.
 - Local disk storage is behind a small storage adapter and is intended for development only. Use private object storage, malware scanning, encryption/key management, retention controls, and deployment-grade secrets before handling real identity documents.
