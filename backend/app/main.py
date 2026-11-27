@@ -70,7 +70,7 @@ def owned_application(db: Session, user: User, application_id: str) -> KycApplic
 
 def serialize_application(entity: KycApplication) -> dict:
     applicant = entity.applicant
-    latest = max((result for result in entity.verification_results if result.is_current), key=lambda result: result.created_at, default=None)
+    latest = max((result for result in entity.verification_results if result.is_current), key=lambda result: datetime_sort_key(result.created_at), default=None)
     checks = json.loads(latest.checks_json) if latest else []
     return {
         "id": entity.id, "name": applicant.name,
@@ -323,6 +323,16 @@ async def upload_document(application_id: str, document_type: str = Query(min_le
             from pypdf import PdfReader
             import io
             extracted_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages).strip()
+            if not extracted_text:
+                extracted_text = extract_text_with_ocr(data, content_type)
+            if extracted_text:
+                fields = get_text_fields(extracted_text)
+                status = "Extracted"
+        except Exception:
+            status = "Manual Review"
+    elif content_type in ("image/jpeg", "image/png"):
+        try:
+            extracted_text = extract_text_with_ocr(data, content_type)
             if extracted_text:
                 fields = get_text_fields(extracted_text)
                 status = "Extracted"
@@ -365,7 +375,7 @@ def verify_application(application_id: str, db: Session = Depends(get_db), user:
 @app.get("/api/applications/{application_id}/verification")
 def verification_result(application_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
     entity = owned_application(db, user, application_id)
-    result = max((item for item in entity.verification_results if item.is_current), key=lambda item: item.created_at, default=None)
+    result = max((item for item in entity.verification_results if item.is_current), key=lambda item: datetime_sort_key(item.created_at), default=None)
     checks, comparisons, reasons = application_checks(entity)
     return {"applicationId": entity.id, "status": entity.status, "score": result.score if result else 0, "checks": json.loads(result.checks_json) if result else checks, "comparisons": json.loads(result.comparisons_json) if result else comparisons, "reasons": result.reasons.splitlines() if result else reasons, "riskScore": entity.risk_score, "riskLevel": entity.risk_level}
 
@@ -402,3 +412,37 @@ def audit_logs(q: str = Query(default="", max_length=160), status: str | None = 
     if status and status != "All":
         records = [row for row in records if row.status == status]
     return [{"id": row.id, "timestamp": row.created_at.isoformat(), "action": row.action, "applicationId": row.application_id, "user": row.user.name if row.user else "System", "status": row.status, "details": row.details} for row in records]
+
+
+def extract_text_with_ocr(content: bytes, content_type: str) -> str:
+    """Extract text from JPEG/PNG images or scanned PDF pages using Tesseract."""
+    import io
+
+    import pytesseract
+    from PIL import Image, ImageEnhance, ImageOps
+
+    def ocr_image(image: Image.Image) -> str:
+        prepared = ImageOps.exif_transpose(image).convert("RGB")
+        prepared = ImageOps.grayscale(prepared)
+        prepared = ImageEnhance.Contrast(prepared).enhance(1.5)
+        prepared = prepared.resize(
+            (prepared.width * 2, prepared.height * 2),
+            resample=Image.Resampling.LANCZOS,
+        )
+        return pytesseract.image_to_string(prepared, lang="eng", config="--psm 6")
+
+    if content_type == "application/pdf":
+        from pdf2image import convert_from_bytes
+
+        pages = convert_from_bytes(content, dpi=300)
+        return "\n".join(ocr_image(page) for page in pages).strip()
+
+    with Image.open(io.BytesIO(content)) as image:
+        return ocr_image(image).strip()
+
+
+def datetime_sort_key(value: datetime) -> datetime:
+    """Normalize SQLite-naive and timezone-aware datetimes for safe comparisons."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
