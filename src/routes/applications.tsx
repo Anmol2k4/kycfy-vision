@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Search, ChevronRight } from "lucide-react";
+import { Search, ChevronRight, Plus, X } from "lucide-react";
 import { PageHeader, Card } from "@/components/AppShell";
 import { StatusBadge, RiskBadge } from "@/components/StatusBadge";
-import { applications, type KycStatus } from "@/lib/mock-data";
+import type { KycStatus, Application } from "@/lib/types";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/applications")({
@@ -39,25 +40,113 @@ const FILTERS: Array<"All" | KycStatus> = [
 function ApplicationsPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"All" | KycStatus>("All");
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return applications.filter((app) => {
-      const matchesQuery =
-        q.length === 0 ||
-        app.name.toLowerCase().includes(q) ||
-        app.id.toLowerCase().includes(q);
-      const matchesStatus = status === "All" || app.status === status;
-      return matchesQuery && matchesStatus;
-    });
-  }, [query, status]);
+  const [risk, setRisk] = useState("All");
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(() => {
+    setLoading(true);
+    api<Application[]>(
+      `/applications?q=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&risk=${encodeURIComponent(risk)}`,
+    )
+      .then(setApplications)
+      .catch((cause) => setError(cause.message))
+      .finally(() => setLoading(false));
+  }, [query, risk, status]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const filtered = applications;
+  const createApplication = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const values = Object.fromEntries(form.entries());
+      if (!values.email) values.email = null;
+      const created = await api<Application>("/applications", {
+        method: "POST",
+        body: JSON.stringify(values),
+      });
+      setApplications((items) => [created, ...items]);
+      setShowCreate(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create application.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
       <PageHeader
         title="KYC Applications"
         description="Search, filter and drill into every application in the pipeline"
-      />
+      >
+        <button
+          type="button"
+          onClick={() => setShowCreate((value) => !value)}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground"
+        >
+          <Plus className="size-4" />
+          New application
+        </button>
+      </PageHeader>
+
+      {showCreate && (
+        <Card className="mb-4 p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-bold">Applicant details</h2>
+            <button type="button" aria-label="Close form" onClick={() => setShowCreate(false)}>
+              <X className="size-4" />
+            </button>
+          </div>
+          <form
+            onSubmit={createApplication}
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            {[
+              ["name", "Full name"],
+              ["email", "Email"],
+              ["phone", "Phone"],
+              ["dob", "Date of birth"],
+              ["gender", "Gender"],
+              ["address", "Address"],
+              ["aadhaar", "Aadhaar number"],
+              ["pan", "PAN"],
+            ].map(([name, label]) => (
+              <label key={name} className="text-xs font-semibold text-muted-foreground">
+                {label}
+                <input
+                  name={name}
+                  required={name === "name"}
+                  type={name === "email" ? "email" : name === "dob" ? "date" : "text"}
+                  className="mt-1 h-10 w-full rounded-lg border bg-background px-3 text-sm text-foreground"
+                />
+              </label>
+            ))}
+            <div className="flex items-end">
+              <button
+                disabled={saving}
+                className="h-10 rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Create application"}
+              </button>
+            </div>
+          </form>
+        </Card>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg bg-destructive-soft p-3 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
 
       <Card>
         <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -87,6 +176,17 @@ function ApplicationsPage() {
                 {f}
               </button>
             ))}
+            <select
+              value={risk}
+              onChange={(event) => setRisk(event.target.value)}
+              aria-label="Filter by risk"
+              className="h-8 rounded-full border bg-background px-3 text-xs font-semibold"
+            >
+              <option value="All">All risk levels</option>
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+            </select>
           </div>
         </div>
 
@@ -103,44 +203,52 @@ function ApplicationsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((app) => (
-                <tr
-                  key={app.id}
-                  className="border-b transition-colors last:border-0 hover:bg-muted/40"
-                >
-                  <td className="px-5 py-3.5 font-mono text-xs font-semibold text-foreground">
-                    {app.id}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-bold text-primary">
-                        {app.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </div>
-                      <span className="font-semibold text-foreground">{app.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-muted-foreground">{app.date}</td>
-                  <td className="px-5 py-3.5">
-                    <RiskBadge risk={app.risk} />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <StatusBadge status={app.status} />
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <Link
-                      to="/applications/$id"
-                      params={{ id: app.id }}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
-                    >
-                      View
-                      <ChevronRight className="size-3.5" />
-                    </Link>
+              {loading && (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-muted-foreground">
+                    Loading applications…
                   </td>
                 </tr>
-              ))}
+              )}
+              {!loading &&
+                filtered.map((app) => (
+                  <tr
+                    key={app.id}
+                    className="border-b transition-colors last:border-0 hover:bg-muted/40"
+                  >
+                    <td className="px-5 py-3.5 font-mono text-xs font-semibold text-foreground">
+                      {app.id}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-bold text-primary">
+                          {app.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </div>
+                        <span className="font-semibold text-foreground">{app.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-muted-foreground">{app.date}</td>
+                    <td className="px-5 py-3.5">
+                      <RiskBadge risk={app.risk} />
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <StatusBadge status={app.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <Link
+                        to="/applications/$id"
+                        params={{ id: app.id }}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                      >
+                        View
+                        <ChevronRight className="size-3.5" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center text-sm text-muted-foreground">
@@ -153,7 +261,7 @@ function ApplicationsPage() {
         </div>
 
         <div className="border-t px-5 py-3 text-xs text-muted-foreground">
-          Showing {filtered.length} of {applications.length} applications
+          Showing {filtered.length} application{filtered.length === 1 ? "" : "s"}
         </div>
       </Card>
     </div>

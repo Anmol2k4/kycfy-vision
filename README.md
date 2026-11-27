@@ -1,124 +1,78 @@
-# KYCFlow Dashboard
+# Kycfy Vision — KYC Automation System
 
-Build a minimal frontend-only dashboard for an AI-powered KYC Automation System called KYCFlow AI.
+Kycfy Vision keeps the existing React/TanStack Start dashboard and adds a FastAPI REST backend. The application is a college-project prototype: it performs transparent text comparisons and rule-based risk scoring; it is not a regulated identity-verification service.
 
-This is a college SGP project, so focus ONLY on the frontend. Do not create a backend, database, authentication system, APIs, real OCR, or real AI integrations.
+## Implementation checklist
 
-Use React + Tailwind CSS.
+- [x] Preserve the existing dashboard, navigation, and visual system.
+- [x] Add user registration/sign-in and owner-scoped application/document access.
+- [x] Persist applicants, KYC applications, documents, verification results, risk assessments, submissions, and append-only audit events.
+- [x] Connect the dashboard, applications, documents, verification, portal-submission, and audit-log screens to the API.
+- [x] Add PDF text extraction, explainable field comparisons/risk rules, safe local storage, and a clearly labeled demo portal adapter.
+- [ ] Configure a real OCR provider and regulator portal only when suitable credentials/services are available.
 
-Create a clean professional fintech/enterprise dashboard with a left sidebar containing:
+## Requirements
 
-Dashboard
+- Node.js 20.19+ (or 22.12+) and npm for the existing Vite 8 frontend.
+- Python 3.10+ for the API.
+- SQLite is used by default. PostgreSQL is supported with a PostgreSQL connection URL and a reachable database.
 
-KYC Applications
+## Install
 
-Documents
+From the project root:
 
-Verification
+```powershell
+npm install
+```
 
-Portal Submission
+Install the backend packages:
 
-Audit Logs
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
 
-Create these main screens:
+On macOS/Linux, activate with `source .venv/bin/activate` instead.
 
-Dashboard
+## Environment configuration
 
-Total Applications
+Copy `backend/.env.example` to `backend/.env`. The API loads that file automatically. At minimum, replace `APP_SECRET_KEY` with a private random value of at least 32 characters. Do not commit `.env` or production credentials.
 
-Pending Verification
+Settings:
 
-Verified
+- `DATABASE_URL`: defaults to `sqlite:///./data/kycfy.db` (path is relative to `backend/`). PostgreSQL example: `postgresql://user:password@localhost:5432/kycfy`.
+- `UPLOAD_DIR`: defaults to `./data/uploads`, a local private document directory relative to `backend/`.
+- `APP_SECRET_KEY`: signs expiring bearer tokens; change it before sharing or deployment.
+- `FRONTEND_ORIGINS`: comma-separated browser origins allowed by CORS. Include the actual deployed frontend origin when deploying.
+- `MAX_UPLOAD_MB`: maximum upload size (defaults to 10 MB).
+- `TOKEN_TTL_HOURS`: bearer-token lifetime (defaults to 12 hours).
+- `VITE_API_BASE_URL`: optional frontend build-time API origin; defaults to `http://localhost:8000`.
 
-Rejected
+## Initialize and run
 
-Recent KYC Applications table
+The API initializes its database tables on first startup using SQLAlchemy metadata (`create_all`). SQLite creates `backend/data/kycfy.db`; uploaded files go under `backend/data/uploads`. No separate migration command is required for a fresh local database. `create_all` does not alter existing schemas; use a managed migration tool before evolving a deployed database schema.
 
-Simple verification status chart
+Start the backend in one terminal:
 
-KYC Applications
+```powershell
+cd backend
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
 
-Table with Application ID, Applicant Name, Date, Status, Risk Level
+Start the frontend from the project root in a second terminal:
 
-Search bar
-
-Status filter
-
-Clicking an application opens its details
-
-KYC Application Details
-
-Applicant information
-
-Uploaded documents
-
-Verification status
-
-Risk score
-
-AI recommendation
-
-Workflow showing:
-Upload → Extract → Validate → Verify → Decision
-
-Documents
-
-Drag-and-drop upload UI
-
-Aadhaar, PAN, Passport and Driving Licence cards
-
-Uploaded/Processing/Verified status
-
-Simulate processing using frontend state
-
-Verification
-
-Name match
-
-Date of birth match
-
-Document validity
-
-Identity match score
-
-Overall verification score
-
-Verified / Requires Review status
-
-Portal Submission
-
-Show a simple automation workflow:
-Authenticate → Enter Data → Upload Documents → Submit → Confirmation
-
-Add a "Start Submission" button that simulates progress using frontend state.
-
-Audit Logs
-
-Simple table showing timestamp, action, application ID and status.
-
-Use realistic mock data so the dashboard looks populated.
-
-Keep the design minimal, polished, responsive and professional. Use subtle animations, clean cards, tables and status badges.
-
-Do NOT over-engineer the project. The priority is a working, visually impressive frontend prototype that can be demonstrated in a college presentation.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/0dd15dfd-5015-4aa7-ae87-652c6bc19b66).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+```powershell
 npm run dev
 ```
+
+Open the local URL printed by Vite (typically `http://localhost:8080`). Create an account in the sign-in screen. API documentation is available at `http://localhost:8000/docs`; health check: `http://localhost:8000/api/health`.
+
+## What is and is not integrated
+
+- PDF text extraction is local using `pypdf`. If a PDF has no extractable text, or an image is uploaded, the application marks it for manual review. No OCR is performed on images.
+- Verification compares fields actually extracted from uploaded PDF text with the submitted applicant fields. Missing values are visible and flagged. Risk levels follow simple documented-in-code rules; they are not an AML/watchlist check or proof of document authenticity.
+- The demo portal adapter stores the structured payload and a `DEMO-…` reference in the database. It never contacts a real portal and does not claim an external acknowledgement.
+- Local disk storage is behind a small storage adapter and is intended for development only. Use private object storage, malware scanning, encryption/key management, retention controls, and deployment-grade secrets before handling real identity documents.
+- Authentication is email/password with scrypt password hashes and signed expiring bearer tokens. Accounts can access only their own KYC records. This prototype does not include password reset, email verification, roles, MFA, or production rate limiting.

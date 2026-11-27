@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowLeft,
   Upload,
@@ -13,23 +14,19 @@ import {
 } from "lucide-react";
 import { PageHeader, Card } from "@/components/AppShell";
 import { StatusBadge, RiskBadge } from "@/components/StatusBadge";
-import { getApplication, WORKFLOW_STAGES } from "@/lib/mock-data";
+import { WORKFLOW_STAGES, type Application } from "@/lib/types";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/applications/$id")({
   head: ({ params }) => {
-    const app = getApplication(params.id);
-    const title = app
-      ? `${app.name} (${app.id}) — KYCFlow AI`
-      : "Application not found — KYCFlow AI";
+    const title = `Application ${params.id} — KYCFlow AI`;
     return {
       meta: [
         { title },
         {
           name: "description",
-          content: app
-            ? `KYC application ${app.id} for ${app.name}: documents, verification checks, risk score and AI recommendation.`
-            : "The requested KYC application could not be found.",
+          content: `KYC application ${params.id}: applicant details, uploaded documents, verification and risk assessment.`,
         },
         { property: "og:title", content: title },
         { property: "og:type", content: "website" },
@@ -64,8 +61,7 @@ function WorkflowStepper({ currentStep }: { currentStep: number }) {
                 className={cn(
                   "flex size-10 items-center justify-center rounded-full border-2 transition-all",
                   done && "border-success bg-success text-success-foreground",
-                  current &&
-                    "border-primary bg-primary-soft text-primary ring-4 ring-primary/15",
+                  current && "border-primary bg-primary-soft text-primary ring-4 ring-primary/15",
                   !done && !current && "border-border bg-muted text-muted-foreground",
                 )}
               >
@@ -100,7 +96,77 @@ function InfoField({ label, value, mono }: { label: string; value: string; mono?
 
 function ApplicationDetails() {
   const { id } = Route.useParams();
-  const app = getApplication(id);
+  const navigate = useNavigate();
+  const [app, setApp] = useState<Application | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api<Application>(`/applications/${encodeURIComponent(id)}`)
+      .then(setApp)
+      .catch((cause) => setError(cause.message))
+      .finally(() => setLoading(false));
+  }, [id]);
+  const changeStatus = async (status: Application["status"]) => {
+    setError("");
+    try {
+      setApp(
+        await api<Application>(`/applications/${encodeURIComponent(id)}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status }),
+        }),
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Status could not be changed.");
+    }
+  };
+  const saveApplicant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    if (!values.email) values.email = null;
+    try {
+      setApp(
+        await api<Application>(`/applications/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(values),
+        }),
+      );
+      setEditing(false);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Applicant information could not be saved.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+  const deleteApplication = async () => {
+    if (!app || app.status !== "Pending" || app.documents.length > 0) return;
+    if (!window.confirm(`Delete pending application ${app.id}? This cannot be undone.`)) return;
+    try {
+      await api<void>(`/applications/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await navigate({ to: "/applications" });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Application could not be deleted.");
+    }
+  };
+
+  if (loading)
+    return <p className="py-16 text-center text-sm text-muted-foreground">Loading application…</p>;
+  if (error && !app)
+    return (
+      <div role="alert" className="py-16 text-center text-sm text-destructive">
+        {error}
+        <p className="mt-2">
+          <Link to="/applications" className="text-primary">
+            Back to applications
+          </Link>
+        </p>
+      </div>
+    );
 
   if (!app) {
     return (
@@ -141,8 +207,25 @@ function ApplicationDetails() {
         <div className="flex items-center gap-2">
           <RiskBadge risk={app.risk} />
           <StatusBadge status={app.status} />
+          {app.status === "Pending" && app.documents.length === 0 && (
+            <button
+              type="button"
+              onClick={() => void deleteApplication()}
+              className="rounded-lg border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive"
+            >
+              Delete
+            </button>
+          )}
         </div>
       </PageHeader>
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg bg-destructive-soft p-3 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
 
       <Card className="overflow-x-auto p-5">
         <h2 className="mb-5 text-sm font-bold text-foreground">Processing Workflow</h2>
@@ -154,7 +237,47 @@ function ApplicationDetails() {
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <Card className="p-5">
-            <h2 className="mb-4 text-sm font-bold text-foreground">Applicant Information</h2>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-foreground">Applicant Information</h2>
+              <button
+                type="button"
+                onClick={() => setEditing((value) => !value)}
+                className="text-xs font-bold text-primary"
+              >
+                {editing ? "Cancel edit" : "Edit details"}
+              </button>
+            </div>
+            {editing && (
+              <form onSubmit={saveApplicant} className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {[
+                  ["name", "Full name", app.name],
+                  ["email", "Email", app.email],
+                  ["phone", "Phone", app.phone],
+                  ["dob", "Date of birth", app.dob],
+                  ["gender", "Gender", app.gender],
+                  ["address", "Address", app.address],
+                  ["aadhaar", "Aadhaar number", app.aadhaar],
+                  ["pan", "PAN", app.pan],
+                ].map(([name, label, value]) => (
+                  <label key={name} className="text-xs font-semibold text-muted-foreground">
+                    {label}
+                    <input
+                      name={name}
+                      defaultValue={value}
+                      required={name === "name"}
+                      type={name === "email" ? "email" : name === "dob" ? "date" : "text"}
+                      className="mt-1 h-10 w-full rounded-lg border bg-background px-3 text-sm text-foreground"
+                    />
+                  </label>
+                ))}
+                <button
+                  disabled={saving}
+                  className="h-10 rounded-lg bg-primary px-4 text-xs font-bold text-primary-foreground sm:col-span-2"
+                >
+                  {saving ? "Saving…" : "Save applicant details"}
+                </button>
+              </form>
+            )}
             <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
               <InfoField label="Full Name" value={app.name} />
               <InfoField label="Date of Birth" value={app.dob} mono />
@@ -171,7 +294,10 @@ function ApplicationDetails() {
             <h2 className="mb-4 text-sm font-bold text-foreground">Uploaded Documents</h2>
             <ul className="divide-y">
               {app.documents.map((doc) => (
-                <li key={doc.fileName} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                <li
+                  key={doc.fileName}
+                  className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+                >
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                     <FileText className="size-4" />
                   </div>
@@ -276,18 +402,22 @@ function ApplicationDetails() {
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
+                onClick={() => changeStatus("Verified")}
+                disabled={app.status === "Verified"}
                 className="flex-1 rounded-lg bg-success px-3 py-2 text-xs font-bold text-success-foreground transition-opacity hover:opacity-90"
               >
                 Approve
               </button>
               <button
                 type="button"
+                onClick={() => changeStatus("Under Review")}
                 className="flex-1 rounded-lg border bg-card px-3 py-2 text-xs font-bold text-foreground transition-colors hover:bg-muted"
               >
                 Escalate
               </button>
               <button
                 type="button"
+                onClick={() => changeStatus("Rejected")}
                 className="flex-1 rounded-lg bg-destructive px-3 py-2 text-xs font-bold text-destructive-foreground transition-opacity hover:opacity-90"
               >
                 Reject

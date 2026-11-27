@@ -22,7 +22,15 @@ const NAV_ITEMS = [
   { to: "/audit-logs", label: "Audit Logs", icon: ScrollText, exact: false },
 ] as const;
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({
+  onNavigate,
+  user,
+  onLogout,
+}: {
+  onNavigate?: () => void;
+  user: { name: string; email: string };
+  onLogout: () => void;
+}) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 px-5 pt-6 pb-7">
@@ -66,21 +74,36 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             </div>
             <div className="min-w-0">
               <p className="truncate text-xs font-semibold text-sidebar-accent-foreground">
-                Pranay Pandey
+                {user.name}
               </p>
-              <p className="text-[11px] text-sidebar-foreground/70">Compliance Reviewer</p>
+              <p className="truncate text-[11px] text-sidebar-foreground/70">{user.email}</p>
             </div>
           </div>
           <p className="mt-2.5 rounded-md bg-sidebar-primary/15 px-2 py-1 text-center text-[10px] font-semibold tracking-wider text-sidebar-primary uppercase">
-            Demo Environment
+            Local workspace
           </p>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="mt-2 w-full text-center text-xs font-semibold text-sidebar-foreground/80 hover:text-sidebar-accent-foreground"
+          >
+            Sign out
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  user,
+  onLogout,
+}: {
+  children: ReactNode;
+  user: { name: string; email: string };
+  onLogout: () => void;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -103,7 +126,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Sidebar — desktop */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 bg-sidebar lg:block">
-        <SidebarContent />
+        <SidebarContent user={user} onLogout={onLogout} />
       </aside>
 
       {/* Sidebar — mobile drawer */}
@@ -122,15 +145,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <X className="size-5" />
             </button>
-            <SidebarContent onNavigate={() => setOpen(false)} />
+            <SidebarContent onNavigate={() => setOpen(false)} user={user} onLogout={onLogout} />
           </aside>
         </div>
       )}
 
       <main className="lg:pl-64">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          {children}
-        </div>
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
       </main>
     </div>
   );
@@ -156,14 +177,6 @@ export function PageHeader({
   );
 }
 
-export function Card({
-  className,
-  children,
-}: {
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className={cn("rounded-xl border bg-card shadow-sm", className)}>{children}</div>
-  );
+export function Card({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={cn("rounded-xl border bg-card shadow-sm", className)}>{children}</div>;
 }

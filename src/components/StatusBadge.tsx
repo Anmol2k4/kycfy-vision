@@ -15,6 +15,9 @@ const STATUS_STYLES: Record<string, string> = {
   Review: "bg-warning-soft text-warning",
   Fail: "bg-destructive-soft text-destructive",
   "Requires Review": "bg-warning-soft text-warning",
+  "Manual Review": "bg-warning-soft text-warning",
+  Extracted: "bg-success-soft text-success",
+  Stored: "bg-success-soft text-success",
 };
 
 const RISK_STYLES: Record<string, string> = {

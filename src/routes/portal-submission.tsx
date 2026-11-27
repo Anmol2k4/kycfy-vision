@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   KeyRound,
@@ -6,13 +6,15 @@ import {
   Upload,
   Send,
   CheckCircle2,
-  Play,
-  RotateCcw,
   Loader2,
   Check,
   Bot,
+  AlertTriangle,
 } from "lucide-react";
 import { PageHeader, Card } from "@/components/AppShell";
+import { StatusBadge } from "@/components/StatusBadge";
+import { api } from "@/lib/api";
+import type { Application } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/portal-submission")({
@@ -21,278 +23,259 @@ export const Route = createFileRoute("/portal-submission")({
       { title: "Portal Submission — KYCFlow AI" },
       {
         name: "description",
-        content:
-          "Watch KYCFlow AI's browser automation authenticate, fill forms, upload documents and submit verified KYC applications to the regulator portal.",
+        content: "Review and store a clearly labeled demo KYC submission payload.",
       },
-      { property: "og:title", content: "Portal Submission — KYCFlow AI" },
-      {
-        property: "og:description",
-        content:
-          "Watch KYCFlow AI's browser automation authenticate, fill forms, upload documents and submit verified KYC applications to the regulator portal.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: PortalSubmissionPage,
 });
-
 const STEPS = [
+  { title: "Review", description: "Confirm the applicant and verified status", icon: KeyRound },
   {
-    title: "Authenticate",
-    description: "Signing in to the CKYC regulator portal with stored credentials",
-    icon: KeyRound,
-  },
-  {
-    title: "Enter Data",
-    description: "Auto-filling applicant details into 14 portal form fields",
+    title: "Build Payload",
+    description: "Prepare a structured submission from stored records",
     icon: ClipboardList,
   },
   {
-    title: "Upload Documents",
-    description: "Attaching verified Aadhaar and PAN documents",
+    title: "Attach Documents",
+    description: "Include the document metadata and integrity hashes",
     icon: Upload,
   },
   {
-    title: "Submit",
-    description: "Submitting the application and waiting for portal validation",
+    title: "Store Demo Submission",
+    description: "Persist the payload locally; no external portal call",
     icon: Send,
   },
-  {
-    title: "Confirmation",
-    description: "Capturing the acknowledgement reference number",
-    icon: CheckCircle2,
-  },
+  { title: "Recorded", description: "Show the local demo reference", icon: CheckCircle2 },
 ];
-
-const STEP_DURATION = 1600;
+type Submission = {
+  id: number;
+  applicationId: string;
+  mode: string;
+  status: string;
+  payload: Record<string, unknown>;
+  response: { message: string };
+  reference: string;
+  createdAt: string;
+};
 
 function PortalSubmissionPage() {
-  const [stepIndex, setStepIndex] = useState(-1); // -1 = idle
-  const [running, setRunning] = useState(false);
-  const timerRef = useRef<number | null>(null);
-
-  const done = stepIndex >= STEPS.length;
-
-  const start = () => {
-    if (running) return;
-    setStepIndex(0);
-    setRunning(true);
-  };
-
-  const reset = () => {
-    if (timerRef.current) window.clearInterval(timerRef.current);
-    timerRef.current = null;
-    setRunning(false);
-    setStepIndex(-1);
-  };
-
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
   useEffect(() => {
-    if (!running) return;
-    timerRef.current = window.setInterval(() => {
-      setStepIndex((prev) => {
-        if (prev + 1 >= STEPS.length) {
-          if (timerRef.current) window.clearInterval(timerRef.current);
-          timerRef.current = null;
-          setRunning(false);
-          return STEPS.length;
-        }
-        return prev + 1;
-      });
-    }, STEP_DURATION);
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    };
-  }, [running]);
-
-  const progress = Math.min(100, Math.max(0, (stepIndex / STEPS.length) * 100));
+    api<Application[]>("/applications")
+      .then((items) => {
+        setApplications(items);
+        setSelectedId(items.find((item) => item.status === "Verified")?.id ?? items[0]?.id ?? "");
+      })
+      .catch((cause) => setError(cause.message));
+  }, []);
+  useEffect(() => {
+    if (!selectedId) {
+      setSubmissions([]);
+      return;
+    }
+    api<Submission[]>(`/applications/${encodeURIComponent(selectedId)}/submissions`)
+      .then(setSubmissions)
+      .catch((cause) => setError(cause.message));
+  }, [selectedId]);
+  const app = applications.find((item) => item.id === selectedId);
+  const latest = submissions[0];
+  const submit = async () => {
+    if (!selectedId || app?.status !== "Verified") return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const created = await api<Submission>(
+        `/applications/${encodeURIComponent(selectedId)}/submissions`,
+        { method: "POST" },
+      );
+      setSubmissions((items) => [created, ...items]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Submission could not be recorded.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const complete = Boolean(latest);
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
       <PageHeader
         title="Portal Submission"
-        description="Browser automation submits verified applications to the regulator portal"
-      />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="p-5 lg:col-span-2">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-primary-soft text-primary">
-                <Bot className="size-5" />
+        description="Prepare a submission record after a reviewer verifies an application"
+      >
+        <select
+          value={selectedId}
+          onChange={(event) => setSelectedId(event.target.value)}
+          aria-label="Select application"
+          className="h-10 rounded-lg border bg-card px-3 font-mono text-xs font-semibold"
+        >
+          <option value="">Select an application</option>
+          {applications.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.id} — {item.name} ({item.status})
+            </option>
+          ))}
+        </select>
+      </PageHeader>
+      <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning-soft/40 px-4 py-3">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+        <p className="text-xs leading-relaxed text-foreground">
+          <strong>Demo adapter only.</strong> This operation stores a payload and generated demo
+          reference in your local database. It does not authenticate with or submit to CKYC or any
+          external registry.
+        </p>
+      </div>
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg bg-destructive-soft p-3 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
+      {!applications.length ? (
+        <Card className="p-8 text-center text-sm text-muted-foreground">
+          Create an application to begin.
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card className="p-5 lg:col-span-2">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-9 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                  <Bot className="size-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold">Submission Review</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {app?.id} · {app?.name}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-sm font-bold text-foreground">Automation Workflow</h2>
-                <p className="text-xs text-muted-foreground">
-                  Application KYC-2026-1042 · Aarav Sharma
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {done && (
+              <div className="flex items-center gap-2">
+                {app && <StatusBadge status={app.status} />}
                 <button
                   type="button"
-                  onClick={reset}
-                  className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+                  onClick={() => void submit()}
+                  disabled={submitting || complete || app?.status !== "Verified"}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
                 >
-                  <RotateCcw className="size-4" />
-                  Reset
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={start}
-                disabled={running || done}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold transition-all",
-                  running || done
-                    ? "cursor-not-allowed bg-muted text-muted-foreground"
-                    : "bg-primary text-primary-foreground hover:bg-primary/90",
-                )}
-              >
-                {running ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Play className="size-4" />
-                )}
-                {running ? "Running…" : done ? "Completed" : "Start Submission"}
-              </button>
-            </div>
-          </div>
-
-          <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-700"
-              style={{ width: `${done ? 100 : progress}%` }}
-            />
-          </div>
-
-          <ol className="space-y-1">
-            {STEPS.map((step, i) => {
-              const isDone = done || i < stepIndex;
-              const isCurrent = !done && i === stepIndex && running;
-              const Icon = step.icon;
-              return (
-                <li key={step.title} className="relative flex gap-4 pb-6 last:pb-0">
-                  {i < STEPS.length - 1 && (
-                    <span
-                      className={cn(
-                        "absolute top-10 left-[19px] h-[calc(100%-2.5rem)] w-0.5 rounded-full transition-colors",
-                        isDone ? "bg-success" : "bg-border",
-                      )}
-                    />
+                  {submitting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Send className="size-4" />
                   )}
-                  <div
-                    className={cn(
-                      "z-10 flex size-10 shrink-0 items-center justify-center rounded-full border-2 transition-all",
-                      isDone && "border-success bg-success text-success-foreground",
-                      isCurrent &&
-                        "border-primary bg-primary-soft text-primary ring-4 ring-primary/15",
-                      !isDone && !isCurrent && "border-border bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {isDone ? (
-                      <Check className="size-4" />
-                    ) : isCurrent ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Icon className="size-4" />
-                    )}
-                  </div>
-                  <div className="pt-1.5">
-                    <p
-                      className={cn(
-                        "text-sm font-bold",
-                        isCurrent
-                          ? "text-primary"
-                          : isDone
-                            ? "text-foreground"
-                            : "text-muted-foreground",
-                      )}
-                    >
-                      {step.title}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{step.description}</p>
-                    {isCurrent && (
-                      <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-[10px] font-bold text-primary">
-                        IN PROGRESS
-                      </p>
-                    )}
-                    {isDone && (
-                      <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-[10px] font-bold text-success">
-                        COMPLETED
-                      </p>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </Card>
-
-        <div className="space-y-4">
-          <Card className={cn("p-5 transition-colors", done && "border-success/40 bg-success-soft/40")}>
-            <h2 className="text-sm font-bold text-foreground">Submission Result</h2>
-            {done ? (
-              <div className="mt-4">
-                <div className="flex items-center gap-2 text-success">
-                  <CheckCircle2 className="size-5" />
-                  <span className="text-sm font-bold">Portal acknowledgement received</span>
-                </div>
-                <dl className="mt-4 space-y-2.5 text-sm">
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">Reference No.</dt>
-                    <dd className="font-mono text-xs font-bold text-foreground">
-                      ACK-2026-88412
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">Portal</dt>
-                    <dd className="text-xs font-semibold text-foreground">CKYC India Registry</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">Submitted At</dt>
-                    <dd className="font-mono text-xs font-semibold text-foreground">
-                      2026-08-22 08:14 IST
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">Elapsed</dt>
-                    <dd className="font-mono text-xs font-semibold text-foreground">
-                      {(STEPS.length * STEP_DURATION) / 1000}s (simulated)
-                    </dd>
-                  </div>
-                </dl>
+                  {submitting ? "Recording…" : complete ? "Recorded" : "Record demo submission"}
+                </button>
               </div>
-            ) : (
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                {running
-                  ? "The automation agent is working through the portal steps. The acknowledgement will appear here."
-                  : "Press Start Submission to run the simulated portal automation for this application."}
+            </div>
+            {app && (
+              <dl className="grid grid-cols-1 gap-3 rounded-xl border bg-muted/30 p-4 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Applicant</dt>
+                  <dd className="mt-1 font-semibold">{app.name}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Application ID</dt>
+                  <dd className="mt-1 font-mono">{app.id}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Email</dt>
+                  <dd className="mt-1">{app.email || "Not provided"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Risk</dt>
+                  <dd className="mt-1">
+                    {app.risk} · {app.riskScore}/100
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-muted-foreground">Documents</dt>
+                  <dd className="mt-1">
+                    {app.documents.length
+                      ? app.documents.map((doc) => doc.fileName).join(", ")
+                      : "No documents attached"}
+                  </dd>
+                </div>
+              </dl>
+            )}
+            {app?.status !== "Verified" && (
+              <p className="mt-4 text-xs text-warning">
+                This action is enabled only after verification and explicit approval.
               </p>
             )}
+            <ol className="mt-6 space-y-1">
+              {STEPS.map((step, index) => {
+                const done = complete;
+                const Icon = step.icon;
+                return (
+                  <li key={step.title} className="flex gap-4 border-b py-4 last:border-0">
+                    <div
+                      className={cn(
+                        "flex size-9 shrink-0 items-center justify-center rounded-full border",
+                        done
+                          ? "border-success bg-success-soft text-success"
+                          : "border-border bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {done ? <Check className="size-4" /> : <Icon className="size-4" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">{step.title}</p>
+                      <p className="text-xs text-muted-foreground">{step.description}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
           </Card>
-
-          <Card className="p-5">
-            <h2 className="text-sm font-bold text-foreground">Why automate?</h2>
-            <ul className="mt-3 space-y-2.5 text-xs leading-relaxed text-muted-foreground">
-              <li className="flex gap-2">
-                <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
-                Eliminates manual re-entry into regulator portals
-              </li>
-              <li className="flex gap-2">
-                <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
-                Cuts submission time from ~20 minutes to seconds
-              </li>
-              <li className="flex gap-2">
-                <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
-                Every step is captured in the audit log for compliance
-              </li>
-            </ul>
-          </Card>
+          <div className="space-y-4">
+            <Card className={cn("p-5", complete && "border-success/40 bg-success-soft/30")}>
+              <h2 className="text-sm font-bold">Submission Record</h2>
+              {latest ? (
+                <div className="mt-4">
+                  <div className="flex items-center gap-2 text-success">
+                    <CheckCircle2 className="size-5" />
+                    <span className="text-sm font-bold">Stored in demo mode</span>
+                  </div>
+                  <dl className="mt-4 space-y-3 text-sm">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Reference</dt>
+                      <dd className="font-mono text-xs font-bold">{latest.reference}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Status</dt>
+                      <dd>{latest.status}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Recorded at</dt>
+                      <dd>{new Date(latest.createdAt).toLocaleString()}</dd>
+                    </div>
+                  </dl>
+                  <p className="mt-4 text-xs text-muted-foreground">{latest.response.message}</p>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  No demo submission has been recorded for this application.
+                </p>
+              )}
+            </Card>
+            <Card className="p-5">
+              <h2 className="text-sm font-bold">Included in the payload</h2>
+              <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
+                <li>Applicant details currently stored in the application</li>
+                <li>Document names, types, and SHA-256 file hashes</li>
+                <li>Demo mode marker and local timestamp</li>
+              </ul>
+            </Card>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

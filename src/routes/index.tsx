@@ -1,16 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  Files,
-  Clock,
-  BadgeCheck,
-  XCircle,
-  ChevronRight,
-  TrendingUp,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Files, Clock, BadgeCheck, XCircle, ChevronRight, TrendingUp } from "lucide-react";
 import { PageHeader, Card } from "@/components/AppShell";
 import { StatCard } from "@/components/StatCard";
 import { StatusBadge, RiskBadge } from "@/components/StatusBadge";
-import { applications, statusCounts, weeklyVolume } from "@/lib/mock-data";
+import { api } from "@/lib/api";
+import type { Application } from "@/lib/types";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -34,14 +29,21 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const DONUT_SEGMENTS = [
-  { label: "Verified", value: statusCounts.verified, color: "var(--color-success)" },
-  { label: "Pending", value: statusCounts.pending, color: "var(--color-warning)" },
-  { label: "Rejected", value: statusCounts.rejected, color: "var(--color-destructive)" },
-];
+type DashboardData = {
+  counts: { total: number; verified: number; pending: number; rejected: number; underReview: number };
+  verificationRate: number;
+  statusCounts: Record<string, number>;
+  weeklyVolume: { day: string; count: number }[];
+  recent: Application[];
+};
 
-function StatusDonut() {
-  const total = DONUT_SEGMENTS.reduce((sum, s) => sum + s.value, 0);
+function StatusDonut({ counts }: { counts: DashboardData["counts"] }) {
+  const segments = [
+    { label: "Verified", value: counts.verified, color: "var(--color-success)" },
+    { label: "Pending", value: counts.pending, color: "var(--color-warning)" },
+    { label: "Rejected", value: counts.rejected, color: "var(--color-destructive)" },
+  ];
+  const total = segments.reduce((sum, s) => sum + s.value, 0);
   const radius = 64;
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
@@ -58,7 +60,7 @@ function StatusDonut() {
             stroke="var(--color-muted)"
             strokeWidth="16"
           />
-          {DONUT_SEGMENTS.map((seg) => {
+          {segments.map((seg) => {
             const fraction = seg.value / total;
             const dash = fraction * circumference;
             const el = (
@@ -88,15 +90,10 @@ function StatusDonut() {
         </div>
       </div>
       <ul className="space-y-3">
-        {DONUT_SEGMENTS.map((seg) => (
+        {segments.map((seg) => (
           <li key={seg.label} className="flex items-center gap-3">
-            <span
-              className="size-3 rounded-sm"
-              style={{ backgroundColor: seg.color }}
-            />
-            <span className="w-20 text-sm font-medium text-muted-foreground">
-              {seg.label}
-            </span>
+            <span className="size-3 rounded-sm" style={{ backgroundColor: seg.color }} />
+            <span className="w-20 text-sm font-medium text-muted-foreground">{seg.label}</span>
             <span className="font-mono text-sm font-bold text-foreground">
               {seg.value.toLocaleString()}
             </span>
@@ -110,8 +107,8 @@ function StatusDonut() {
   );
 }
 
-function WeeklyBars() {
-  const max = Math.max(...weeklyVolume.map((d) => d.count));
+function WeeklyBars({ weeklyVolume }: { weeklyVolume: DashboardData["weeklyVolume"] }) {
+  const max = Math.max(1, ...weeklyVolume.map((d) => d.count));
   return (
     <div>
       <div className="flex h-44 items-end gap-2 sm:gap-3">
@@ -137,7 +134,14 @@ function WeeklyBars() {
 }
 
 function Dashboard() {
-  const recent = applications.slice(0, 6);
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api<DashboardData>("/dashboard")
+      .then(setData)
+      .catch((cause) => setError(cause.message));
+  }, []);
+  const recent = data?.recent ?? [];
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -150,29 +154,29 @@ function Dashboard() {
         <StatCard
           icon={Files}
           label="Total Applications"
-          value={statusCounts.total.toLocaleString()}
-          hint="+12.5% vs last month"
+          value={(data?.counts.total ?? 0).toLocaleString()}
+          hint="Stored applications in your workspace"
           tone="primary"
         />
         <StatCard
           icon={Clock}
           label="Pending Verification"
-          value={String(statusCounts.pending)}
-          hint="14 flagged for manual review"
+          value={String(data?.counts.pending ?? 0)}
+          hint={`${data?.counts.underReview ?? 0} flagged for manual review`}
           tone="warning"
         />
         <StatCard
           icon={BadgeCheck}
           label="Verified"
-          value={statusCounts.verified.toLocaleString()}
-          hint="92.6% auto-approval rate"
+          value={(data?.counts.verified ?? 0).toLocaleString()}
+          hint={`${data?.verificationRate ?? 0}% verified`}
           tone="success"
         />
         <StatCard
           icon={XCircle}
           label="Rejected"
-          value={String(statusCounts.rejected)}
-          hint="Mostly document authenticity failures"
+          value={String(data?.counts.rejected ?? 0)}
+          hint="Applications rejected after review"
           tone="destructive"
         />
       </div>
@@ -182,16 +186,16 @@ function Dashboard() {
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-sm font-bold text-foreground">Verification Status</h2>
-              <p className="text-xs text-muted-foreground">
-                Distribution across all applications
-              </p>
+              <p className="text-xs text-muted-foreground">Distribution across your applications</p>
             </div>
             <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2.5 py-1 text-xs font-semibold text-success">
               <TrendingUp className="size-3.5" />
-              +4.2% approval
+              {data?.verificationRate ?? 0}% verified
             </span>
           </div>
-          <StatusDonut />
+          <StatusDonut
+            counts={data?.counts ?? { total: 0, verified: 0, pending: 0, rejected: 0 }}
+          />
         </Card>
 
         <Card className="p-5 lg:col-span-2">
@@ -199,7 +203,7 @@ function Dashboard() {
             <h2 className="text-sm font-bold text-foreground">Applications This Week</h2>
             <p className="text-xs text-muted-foreground">New submissions per day</p>
           </div>
-          <WeeklyBars />
+          <WeeklyBars weeklyVolume={data?.weeklyVolume ?? []} />
         </Card>
       </div>
 
@@ -217,6 +221,19 @@ function Dashboard() {
             <ChevronRight className="size-3.5" />
           </Link>
         </div>
+        {error && (
+          <p
+            role="alert"
+            className="border-b bg-destructive-soft px-5 py-3 text-sm text-destructive"
+          >
+            {error}
+          </p>
+        )}
+        {!data && !error && (
+          <p className="border-b px-5 py-8 text-center text-sm text-muted-foreground">
+            Loading dashboard…
+          </p>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
@@ -231,7 +248,10 @@ function Dashboard() {
             </thead>
             <tbody>
               {recent.map((app) => (
-                <tr key={app.id} className="border-b transition-colors last:border-0 hover:bg-muted/40">
+                <tr
+                  key={app.id}
+                  className="border-b transition-colors last:border-0 hover:bg-muted/40"
+                >
                   <td className="px-5 py-3.5 font-mono text-xs font-semibold text-foreground">
                     {app.id}
                   </td>
@@ -255,6 +275,13 @@ function Dashboard() {
                   </td>
                 </tr>
               ))}
+              {data && recent.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-muted-foreground">
+                    No applications yet. Create an application to see dashboard activity.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
